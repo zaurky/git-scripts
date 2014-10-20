@@ -1,0 +1,82 @@
+#!/usr/bin/python
+
+import os
+from ConfigParser import NoSectionError, NoOptionError
+from optparse import OptionParser
+from git import Repo
+
+
+class Note(object):
+
+    def __init__(self, options, args):
+        self.repo = Repo(os.getcwd())
+        assert self.repo.bare == False
+
+        self.options = options
+        self.desc = ' '.join(args)
+
+        if self.options.verbose or self.options.list:
+            self.config = self.repo.config_reader()
+        else:
+            self.config = self.repo.config_writer()
+
+        self.get_branch()
+
+    def read_desc(self, branch):
+        try:
+            return (self.config.get('branch "%s"' % branch.name,
+                                    'description').replace('\\', ''))
+        except (NoSectionError, NoOptionError):
+            pass
+
+    def write_desc(self, branch):
+        self.config.set('branch "%s"' % branch.name, 'description', self.desc)
+
+    def get_branch(self):
+        self.branch = self.repo.active_branch
+        if self.options.branch:
+            for br_ in self.repo.branches:
+                if br_.name == self.options.branch:
+                    self.branch = br_
+
+            if not self.branch:
+                raise Exception('Can not find branch "%s".' %
+                                self.options.branch)
+
+    def print_desc(self, branch, desc):
+        print '%s: %s' % (branch.name, desc if desc else 'Nothing')
+
+    def run(self):
+        if self.options.verbose or self.options.list:
+            for branch in self.repo.branches:
+                desc = self.read_desc(branch)
+                if not self.options.verbose and not desc:
+                    continue
+
+                self.print_desc(branch, desc)
+        elif self.desc:
+            self.write_desc(self.branch)
+        else:
+            desc = self.read_desc(self.branch)
+            self.print_desc(self.branch, desc)
+
+
+def main():
+    parser = OptionParser()
+    parser.add_option('-b', '--branch', dest='branch',
+                      help='Branch to attach note to. Default: current')
+    parser.add_option('-l', '--list', dest='list', default=False,
+                      action='store_true',
+                      help='Lists all the branches with notes')
+    parser.add_option('-v', '--verbose', action="store_true", default=False,
+                      dest='verbose',
+                      help='List also branches with no notes')
+
+    (options, args) = parser.parse_args()
+
+    note = Note(options, args)
+    note.run()
+
+
+if __name__ == '__main__':
+    main()
